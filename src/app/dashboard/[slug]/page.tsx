@@ -6,7 +6,7 @@ import { TOKENS, type TokenSymbol } from '@/lib/tokens';
 export const dynamic = 'force-dynamic'; // sales must always be fresh
 
 const EXPLORER =
-  (process.env.NEXT_PUBLIC_CELO_NETWORK ?? 'celo-alfajores') === 'celo'
+  (process.env.NEXT_PUBLIC_CELO_NETWORK || 'celo-alfajores') === 'celo'
     ? 'https://celoscan.io'
     : 'https://alfajores.celoscan.io';
 

@@ -10,7 +10,7 @@ import { TOKENS, DEFAULT_TOKEN, CUSD, isTokenAvailable } from "@/lib/tokens";
 import type { CeloNetwork, TokenSymbol } from "@/lib/tokens";
 
 export const NETWORK: CeloNetwork =
-  (process.env.NEXT_PUBLIC_CELO_NETWORK as CeloNetwork) ?? "celo-alfajores";
+  (process.env.NEXT_PUBLIC_CELO_NETWORK as CeloNetwork) || "celo-alfajores";
 
 const CHAIN_MAP = {
   celo:             { chainId: 42220, chainIdHex: "0xa4ec" as const },

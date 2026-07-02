@@ -5,7 +5,7 @@ import { merchants, payments } from '@/db/schema';
 import { eq, desc, sum, count } from 'drizzle-orm';
 import { merchantTokens, type CeloNetwork } from '@/lib/tokens';
 
-const NETWORK = (process.env.NEXT_PUBLIC_CELO_NETWORK ?? 'celo-alfajores') as CeloNetwork;
+const NETWORK = (process.env.NEXT_PUBLIC_CELO_NETWORK || 'celo-alfajores') as CeloNetwork;
 
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/;
 

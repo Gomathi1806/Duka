@@ -12,7 +12,8 @@ import {
   type PaymentPayload,
 } from "@/lib/x402";
 
-const NETWORK = (process.env.NEXT_PUBLIC_CELO_NETWORK ?? "celo-alfajores") as CeloNetwork;
+// "||" not "??" — an env var saved as an empty string must still fall back
+const NETWORK = (process.env.NEXT_PUBLIC_CELO_NETWORK || "celo-alfajores") as CeloNetwork;
 
 function parseAmount(raw: string | null): string | null {
   if (!raw) return null;

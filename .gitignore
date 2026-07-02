@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env
+.env.local
+.env.example
+.env*.local
+*.env
+drizzle/
+tsconfig.tsbuildinfo
+*.log
+.claude/
+.DS_Store

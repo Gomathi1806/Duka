@@ -27,6 +27,12 @@ export async function createMerchant(data: {
   token?: string;
 }): Promise<{ success: boolean; slug?: string; error?: string }> {
   try {
+    if (!process.env.DATABASE_URL) {
+      return {
+        success: false,
+        error: 'Database not configured — set DATABASE_URL in .env.local (see env.template).',
+      };
+    }
     if (!WALLET_RE.test(data.walletAddress)) {
       return { success: false, error: 'Invalid wallet address.' };
     }

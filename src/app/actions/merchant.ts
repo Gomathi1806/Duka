@@ -78,8 +78,9 @@ export async function createMerchant(data: {
 
     return { success: true, slug };
   } catch (e) {
-    console.error('[createMerchant] error:', e);
-    return { success: false, error: 'Failed to create store. Please try again.' };
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[createMerchant] error:', msg);
+    return { success: false, error: `Store creation failed: ${msg.slice(0, 200)}` };
   }
 }
 

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { detectWallet, sendToken, NETWORK, TOKENS, type TokenSymbol } from '@/lib/minipay';
+import { detectWallet, isMiniPay, sendToken, NETWORK, TOKENS, type TokenSymbol } from '@/lib/minipay';
 import { X402_VERSION, encodePaymentHeader, type PaymentRequiredResponse } from '@/lib/x402';
+import { miniPayReceiptUrl } from '@/lib/deeplinks';
 
 type Stage = 'detecting' | 'no-wallet' | 'ready' | 'paying' | 'verifying' | 'paid' | 'error';
 
@@ -118,14 +119,21 @@ export default function PayClient({
         </h1>
         <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>to {merchantName}</p>
         {txHash && (
-          <a
-            className="btn btn-secondary"
-            href={`${EXPLORER}/tx/${txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            View receipt on Celoscan ↗
-          </a>
+          <div style={{ display: 'grid', gap: '0.75rem', justifyItems: 'center' }}>
+            {isMiniPay() && (
+              <a className="btn btn-primary" href={miniPayReceiptUrl(txHash)}>
+                🧾 View receipt in MiniPay
+              </a>
+            )}
+            <a
+              className="btn btn-secondary"
+              href={`${EXPLORER}/tx/${txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              View on Celoscan ↗
+            </a>
+          </div>
         )}
       </main>
     );

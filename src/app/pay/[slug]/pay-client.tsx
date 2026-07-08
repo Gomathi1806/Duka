@@ -101,10 +101,20 @@ export default function PayClient({
       <main style={{ textAlign: 'center', marginTop: '3rem' }}>
         <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Pay {merchantName}</h1>
         <div className="glass" style={{ padding: '1.5rem' }}>
-          <p style={{ marginBottom: '0.75rem' }}>📱 Open this page inside <strong>MiniPay</strong> to pay.</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            In Opera Mini or the MiniPay app, scan the merchant&apos;s QR code again.
+          <p style={{ marginBottom: '0.75rem' }}>📱 Open this link in <strong>Opera Mini</strong> to pay with MiniPay.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+            Copy the link below and paste it in Opera Mini&apos;s address bar, or open Opera Mini and scan the QR again.
           </p>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ fontSize: '0.85rem' }}
+            onClick={() => {
+              navigator.clipboard.writeText(window.location.href).catch(() => {});
+            }}
+          >
+            📋 Copy this link
+          </button>
         </div>
       </main>
     );

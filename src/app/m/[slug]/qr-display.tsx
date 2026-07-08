@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import QRCode from '@/components/QRCode';
-import { miniPayBrowseUrl } from '@/lib/deeplinks';
 
 export default function QRDisplay({
   slug,
@@ -26,10 +25,6 @@ export default function QRDisplay({
     ? `${origin}/pay/${slug}${selectedAmount ? `?amount=${selectedAmount}` : ''}`
     : '';
 
-  // QR encodes the MiniPay deeplink so a phone-camera scan opens the pay
-  // page inside MiniPay's browser (wallet injected). MiniPay's own scanner
-  // only handles addresses/phone numbers — customers scan with phone camera.
-  const qrValue = payUrl ? miniPayBrowseUrl(payUrl) : '';
 
   async function copyLink() {
     try {
@@ -60,11 +55,11 @@ export default function QRDisplay({
       <div className="glass print-card" style={{ padding: '2rem 1.5rem', textAlign: 'center' }}>
         <h1 style={{ fontSize: '1.4rem', marginBottom: '0.25rem' }}>{merchantName}</h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.25rem' }}>
-          Scan with phone camera to pay{selectedAmount ? ` $${selectedAmount}` : ''}
+          Open in Opera Mini or scan with phone camera{selectedAmount ? ` · $${selectedAmount}` : ''}
         </p>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
-          {qrValue ? (
-            <QRCode value={qrValue} size={260} />
+          {payUrl ? (
+            <QRCode value={payUrl} size={260} />
           ) : (
             <div style={{ width: 260, height: 260 }} />
           )}

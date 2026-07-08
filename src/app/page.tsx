@@ -73,7 +73,7 @@ export default function HomePage() {
         </p>
       </header>
 
-      <form className="glass" style={{ padding: '1.5rem', display: 'grid', gap: '1rem' }} onSubmit={submit}>
+      <form className="glass" style={{ padding: '1.5rem', display: 'grid', gap: '1rem' }} onSubmit={submit} autoComplete="off">
         <div>
           <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.4rem' }}>
             Business name
@@ -84,6 +84,7 @@ export default function HomePage() {
             placeholder="Mama Ngozi's Kitchen"
             maxLength={60}
             required
+            autoComplete="off"
             style={{ width: '100%', padding: '0.8rem 1rem' }}
           />
         </div>
@@ -98,6 +99,7 @@ export default function HomePage() {
             placeholder="0x…"
             pattern="0x[0-9a-fA-F]{40}"
             required
+            autoComplete="off"
             style={{ width: '100%', padding: '0.8rem 1rem', fontFamily: 'monospace', fontSize: '0.85rem' }}
           />
           <button
@@ -148,6 +150,21 @@ export default function HomePage() {
           <p style={{ color: '#ef4444', fontSize: '0.9rem', textAlign: 'center' }}>{error}</p>
         )}
       </form>
+
+      <div className="glass" style={{ padding: '1rem 1.5rem', marginTop: '1rem', textAlign: 'center' }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+          Already have a store? Connect your wallet to return.
+        </p>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ fontSize: '0.85rem', padding: '0.5rem 1.25rem' }}
+          onClick={connectWallet}
+          disabled={connecting}
+        >
+          {connecting ? 'Connecting…' : '🔑 Find my store'}
+        </button>
+      </div>
 
       <section style={{ marginTop: '2rem', display: 'grid', gap: '0.75rem' }}>
         {[

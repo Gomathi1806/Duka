@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import QRCode from '@/components/QRCode';
-import { miniPayBrowseUrl } from '@/lib/deeplinks';
 
 export default function QRDisplay({
   slug,
@@ -25,11 +24,6 @@ export default function QRDisplay({
   const payUrl = origin
     ? `${origin}/pay/${slug}${selectedAmount ? `?amount=${selectedAmount}` : ''}`
     : '';
-
-  // The QR carries the MiniPay browse deeplink so a camera-app scan opens
-  // the pay page inside MiniPay (wallet injected) rather than a bare browser.
-  // The visible/copyable link stays the plain URL — readable and shareable.
-  const qrValue = payUrl ? miniPayBrowseUrl(payUrl) : '';
 
   async function copyLink() {
     try {

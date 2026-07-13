@@ -46,6 +46,7 @@ export default function PayClient({
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [walletType, setWalletType] = useState<WalletType | null>(null);
   const [hasInjected, setHasInjected] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const tokenSymbol = token as TokenSymbol;
   const tokenLabel = TOKENS[tokenSymbol]?.label ?? token;
@@ -154,7 +155,6 @@ export default function PayClient({
   if (stage === 'connect' || stage === 'connecting') {
     const pageUrl = typeof window !== 'undefined' ? window.location.href : '';
     const miniPayLink = pageUrl ? miniPayBrowseUrl(pageUrl) : '';
-    const [copied, setCopied] = useState(false);
 
     return (
       <main style={{ textAlign: 'center', marginTop: '2rem' }}>

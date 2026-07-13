@@ -1,6 +1,7 @@
 "use client";
 
-import { encodeFunctionData, parseUnits } from "viem";
+import { encodeFunctionData, parseUnits, concatHex } from "viem";
+import { toDataSuffix } from "@celo/attribution-tags";
 export type { CeloNetwork, TokenSymbol } from "@/lib/tokens";
 export {
   TOKENS, ALL_TOKENS, DEFAULT_TOKEN, CUSD,
@@ -16,6 +17,8 @@ const CHAIN_MAP = {
   celo:             { chainId: 42220, chainIdHex: "0xa4ec" as const },
   "celo-alfajores": { chainId: 44787, chainIdHex: "0xaef3" as const },
 } as const;
+
+const ATTRIBUTION_TAG = toDataSuffix("celo_ec660205f1c4") as `0x${string}`;
 
 const ERC20_TRANSFER_ABI = [{
   name: "transfer",
@@ -183,11 +186,13 @@ export async function sendToken(
   const tokenContract = contractAddrs[NETWORK];
   const amountWei = parseUnits(amountUsd, decimals);
 
-  const data = encodeFunctionData({
+  const calldata = encodeFunctionData({
     abi: ERC20_TRANSFER_ABI,
     functionName: "transfer",
     args: [recipientAddress, amountWei],
   });
+
+  const data = concatHex([calldata, ATTRIBUTION_TAG]);
 
   return (await provider.request({
     method: "eth_sendTransaction",

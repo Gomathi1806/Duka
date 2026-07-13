@@ -33,63 +33,71 @@ export async function GET(
   req: NextRequest,
   context: { params: Promise<{ slug: string }> }
 ) {
-  const { slug } = await context.params;
+  try {
+    const { slug } = await context.params;
 
-  const db = getDb();
-  const merchant = await db.query.merchants.findFirst({
-    where: eq(merchants.slug, slug.toLowerCase()),
-  });
-  if (!merchant) {
-    return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
-  }
+    const db = getDb();
+    const merchant = await db.query.merchants.findFirst({
+      where: eq(merchants.slug, slug.toLowerCase()),
+    });
+    if (!merchant) {
+      return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
+    }
 
-  const amount = parseAmount(req.nextUrl.searchParams.get("amount"));
-  const tokenParam = req.nextUrl.searchParams.get("token") ?? merchant.token;
-  if (!(tokenParam in TOKENS) || !isTokenAvailable(tokenParam as TokenSymbol, NETWORK)) {
+    const amount = parseAmount(req.nextUrl.searchParams.get("amount"));
+    const tokenParam = req.nextUrl.searchParams.get("token") ?? merchant.token;
+    if (!(tokenParam in TOKENS) || !isTokenAvailable(tokenParam as TokenSymbol, NETWORK)) {
+      return NextResponse.json(
+        { error: `Unsupported token on ${NETWORK}: ${tokenParam}` },
+        { status: 400 }
+      );
+    }
+    const tokenSym: TokenSymbol = tokenParam as TokenSymbol;
+
+    if (!amount) {
+      return NextResponse.json(
+        { error: "Query param 'amount' (0 < amount <= 10000) is required" },
+        { status: 400 }
+      );
+    }
+
+    const requirements = buildPaymentRequirements({
+      network: NETWORK,
+      amountUsd: amount,
+      token: tokenSym,
+      payTo: merchant.walletAddress as `0x${string}`,
+      resource: req.nextUrl.href,
+      description: `Payment of $${amount} to ${merchant.name}`,
+    });
+
+    const paymentHeader = req.headers.get("X-PAYMENT");
+    if (!paymentHeader) {
+      return NextResponse.json(
+        {
+          x402Version: X402_VERSION,
+          error: "X-PAYMENT header is required",
+          accepts: [requirements],
+        },
+        { status: 402 }
+      );
+    }
+
+    const payload = decodePaymentHeader(paymentHeader);
+    if (!payload) {
+      return NextResponse.json(
+        { x402Version: X402_VERSION, error: "Malformed X-PAYMENT header", accepts: [requirements] },
+        { status: 402 }
+      );
+    }
+
+    return settle(merchant.id, merchant.name, merchant.walletAddress as `0x${string}`, payload, amount);
+  } catch (err) {
+    console.error("[x402 GET] crash:", err instanceof Error ? err.stack : err);
     return NextResponse.json(
-      { error: `Unsupported token on ${NETWORK}: ${tokenParam}` },
-      { status: 400 }
+      { error: err instanceof Error ? `${err.name}: ${err.message}` : "Internal error" },
+      { status: 500 }
     );
   }
-  const token = tokenParam as TokenSymbol;
-
-  if (!amount) {
-    return NextResponse.json(
-      { error: "Query param 'amount' (0 < amount <= 10000) is required" },
-      { status: 400 }
-    );
-  }
-
-  const requirements = buildPaymentRequirements({
-    network: NETWORK,
-    amountUsd: amount,
-    token,
-    payTo: merchant.walletAddress as `0x${string}`,
-    resource: req.nextUrl.href,
-    description: `Payment of $${amount} to ${merchant.name}`,
-  });
-
-  const paymentHeader = req.headers.get("X-PAYMENT");
-  if (!paymentHeader) {
-    return NextResponse.json(
-      {
-        x402Version: X402_VERSION,
-        error: "X-PAYMENT header is required",
-        accepts: [requirements],
-      },
-      { status: 402 }
-    );
-  }
-
-  const payload = decodePaymentHeader(paymentHeader);
-  if (!payload) {
-    return NextResponse.json(
-      { x402Version: X402_VERSION, error: "Malformed X-PAYMENT header", accepts: [requirements] },
-      { status: 402 }
-    );
-  }
-
-  return settle(merchant.id, merchant.name, merchant.walletAddress as `0x${string}`, payload, amount);
 }
 
 /**

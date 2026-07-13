@@ -1,13 +1,30 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { detectWallet, isMiniPay, sendToken, NETWORK, TOKENS, type TokenSymbol } from '@/lib/minipay';
+import {
+  detectWallet, isMiniPay, sendToken, connectInjected, connectWalletConnect,
+  disconnectWallet, getWalletType, NETWORK, TOKENS,
+  type TokenSymbol, type WalletType, type ConnectedWallet,
+} from '@/lib/minipay';
 import { X402_VERSION, encodePaymentHeader, type PaymentRequiredResponse } from '@/lib/x402';
-import { miniPayReceiptUrl } from '@/lib/deeplinks';
+import { miniPayReceiptUrl, miniPayBrowseUrl } from '@/lib/deeplinks';
 
-type Stage = 'detecting' | 'no-wallet' | 'ready' | 'paying' | 'verifying' | 'paid' | 'error';
+type Stage =
+  | 'detecting'
+  | 'connect'
+  | 'connecting'
+  | 'ready'
+  | 'paying'
+  | 'verifying'
+  | 'paid'
+  | 'error';
 
 const EXPLORER = NETWORK === 'celo' ? 'https://celoscan.io' : 'https://alfajores.celoscan.io';
+
+const MINIPAY_DOWNLOAD = 'https://www.opera.com/products/minipay';
+const VALORA_DOWNLOAD = 'https://valoraapp.com';
+
+const hasWcProjectId = !!process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
 export default function PayClient({
   slug,
@@ -26,6 +43,9 @@ export default function PayClient({
   const [amount, setAmount] = useState(initialAmount);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
   const [error, setError] = useState('');
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [walletType, setWalletType] = useState<WalletType | null>(null);
+  const [hasInjected, setHasInjected] = useState(false);
 
   const tokenSymbol = token as TokenSymbol;
   const tokenLabel = TOKENS[tokenSymbol]?.label ?? token;
@@ -33,8 +53,47 @@ export default function PayClient({
   const amountValid = isFinite(amountNum) && amountNum > 0 && amountNum <= 10000;
 
   useEffect(() => {
-    detectWallet().then((found) => setStage(found ? 'ready' : 'no-wallet'));
+    detectWallet(1500).then((found) => {
+      setHasInjected(found);
+      if (found) {
+        handleConnect('injected');
+      } else {
+        setStage('connect');
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleConnect(method: 'injected' | 'walletconnect') {
+    setStage('connecting');
+    setError('');
+    try {
+      let wallet: ConnectedWallet;
+      if (method === 'walletconnect') {
+        wallet = await connectWalletConnect();
+      } else {
+        wallet = await connectInjected();
+      }
+      setWalletAddress(wallet.address);
+      setWalletType(wallet.type);
+      setStage('ready');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Connection failed.';
+      if (/rejected|denied|cancelled|canceled|closed/i.test(msg)) {
+        setStage('connect');
+        return;
+      }
+      setError(msg);
+      setStage('connect');
+    }
+  }
+
+  function handleDisconnect() {
+    disconnectWallet();
+    setWalletAddress(null);
+    setWalletType(null);
+    setStage('connect');
+  }
 
   async function pay() {
     if (!amountValid) return;
@@ -42,8 +101,6 @@ export default function PayClient({
     const usd = amountNum.toFixed(2);
 
     try {
-      // x402 step 1: request the resource — expect a 402 challenge with
-      // payment requirements (who to pay, which token contract, how much)
       const resourceUrl = `/api/x402/${slug}?amount=${usd}&token=${token}`;
       const challenge = await fetch(resourceUrl);
       if (challenge.status !== 402) {
@@ -53,13 +110,10 @@ export default function PayClient({
       const req = accepts?.[0];
       if (!req) throw new Error('No payment requirements returned.');
 
-      // x402 step 2: pay on-chain via MiniPay (eth_sendTransaction)
       setStage('paying');
       const hash = await sendToken(req.payTo, req.extra.displayAmount, req.extra.symbol);
       setTxHash(hash);
 
-      // x402 step 3: retry the resource with the X-PAYMENT header — server
-      // verifies the transfer on Celo and returns the settlement receipt
       setStage('verifying');
       const settled = await fetch(resourceUrl, {
         headers: {
@@ -80,7 +134,6 @@ export default function PayClient({
       setStage('paid');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Payment failed.';
-      // User rejected in wallet — back to ready, no scary error screen
       if (/rejected|denied|cancelled|canceled/i.test(msg)) {
         setStage('ready');
         setError('Payment cancelled.');
@@ -92,34 +145,129 @@ export default function PayClient({
     }
   }
 
+  // --- Detecting ---
   if (stage === 'detecting') {
     return <p style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--text-muted)' }}>Loading…</p>;
   }
 
-  if (stage === 'no-wallet') {
+  // --- Connect wallet ---
+  if (stage === 'connect' || stage === 'connecting') {
+    const pageUrl = typeof window !== 'undefined' ? window.location.href : '';
+    const miniPayLink = pageUrl ? miniPayBrowseUrl(pageUrl) : '';
+    const [copied, setCopied] = useState(false);
+
     return (
-      <main style={{ textAlign: 'center', marginTop: '3rem' }}>
-        <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Pay {merchantName}</h1>
-        <div className="glass" style={{ padding: '1.5rem' }}>
-          <p style={{ marginBottom: '0.75rem' }}>📱 Open this link in <strong>Opera Mini</strong> to pay with MiniPay.</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-            Copy the link below and paste it in Opera Mini&apos;s address bar, or open Opera Mini and scan the QR again.
-          </p>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ fontSize: '0.85rem' }}
-            onClick={() => {
-              navigator.clipboard.writeText(window.location.href).catch(() => {});
-            }}
-          >
-            📋 Copy this link
-          </button>
+      <main style={{ textAlign: 'center', marginTop: '2rem' }}>
+        <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Pay {merchantName}</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+          Connect a wallet to pay with {tokenLabel} on Celo
+        </p>
+
+        <div className="glass" style={{ padding: '1.5rem', maxWidth: '400px', margin: '0 auto' }}>
+          {/* Option 1: Injected wallet (MetaMask, MiniPay in-app, etc.) */}
+          {hasInjected && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ width: '100%', marginBottom: '0.75rem', fontSize: '1rem' }}
+              disabled={stage === 'connecting'}
+              onClick={() => handleConnect('injected')}
+            >
+              {isMiniPay() ? '📱 Connect MiniPay' : '🦊 Connect Wallet'}
+            </button>
+          )}
+
+          {/* Option 2: WalletConnect (QR code / deep link to mobile wallets) */}
+          {hasWcProjectId && (
+            <button
+              type="button"
+              className={hasInjected ? 'btn btn-secondary' : 'btn btn-primary'}
+              style={{ width: '100%', marginBottom: '0.75rem', fontSize: '1rem' }}
+              disabled={stage === 'connecting'}
+              onClick={() => handleConnect('walletconnect')}
+            >
+              {stage === 'connecting' ? '⏳ Connecting…' : '🔗 Connect with WalletConnect'}
+            </button>
+          )}
+
+          {/* Option 3: Open in MiniPay (deep link for mobile users) */}
+          {!hasInjected && miniPayLink && (
+            <a
+              href={miniPayLink}
+              className={hasWcProjectId ? 'btn btn-secondary' : 'btn btn-primary'}
+              style={{ display: 'block', width: '100%', marginBottom: '0.75rem', fontSize: '1rem', textDecoration: 'none' }}
+            >
+              📱 Open in MiniPay
+            </a>
+          )}
+
+          {error && (
+            <p style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.5rem', marginBottom: '0.75rem' }}>
+              {error}
+            </p>
+          )}
+
+          {/* Copy link + wallet download section */}
+          <div style={{
+            borderTop: '1px solid var(--border-subtle, rgba(128,128,128,0.2))',
+            marginTop: '1rem',
+            paddingTop: '1rem',
+          }}>
+            {!hasInjected && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ width: '100%', marginBottom: '1rem', fontSize: '0.9rem' }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(pageUrl).then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }).catch(() => {});
+                  }}
+                >
+                  {copied ? '✅ Copied!' : '📋 Copy payment link'}
+                </button>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.75rem' }}>
+                  Paste this link in your wallet&apos;s built-in browser to pay.
+                </p>
+              </>
+            )}
+
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+              Don&apos;t have a wallet? Get started:
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <a
+                href={MINIPAY_DOWNLOAD}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary"
+                style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+              >
+                📱 Get MiniPay
+              </a>
+              <a
+                href={VALORA_DOWNLOAD}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary"
+                style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+              >
+                💚 Get Valora
+              </a>
+            </div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.75rem' }}>
+              MiniPay is built into Opera Mini — 16M+ users across Africa.
+              <br />Valora is a mobile wallet for Celo with easy onboarding.
+            </p>
+          </div>
         </div>
       </main>
     );
   }
 
+  // --- Paid ---
   if (stage === 'paid') {
     return (
       <main style={{ textAlign: 'center', marginTop: '3rem' }}>
@@ -130,7 +278,7 @@ export default function PayClient({
         <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>to {merchantName}</p>
         {txHash && (
           <div style={{ display: 'grid', gap: '0.75rem', justifyItems: 'center' }}>
-            {isMiniPay() && (
+            {walletType === 'minipay' && (
               <a className="btn btn-primary" href={miniPayReceiptUrl(txHash)}>
                 🧾 View receipt in MiniPay
               </a>
@@ -149,12 +297,54 @@ export default function PayClient({
     );
   }
 
+  // --- Payment form (ready / paying / verifying / error) ---
+  const walletLabel =
+    walletType === 'minipay' ? 'MiniPay' :
+    walletType === 'walletconnect' ? 'WalletConnect' :
+    'Wallet';
+
   return (
     <main>
       <header style={{ textAlign: 'center', margin: '2rem 0 1.5rem' }}>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Paying</p>
         <h1 style={{ fontSize: '1.6rem' }}>{merchantName}</h1>
       </header>
+
+      {walletAddress && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.5rem',
+          marginBottom: '1rem',
+          fontSize: '0.8rem',
+          color: 'var(--text-muted)',
+        }}>
+          <span style={{
+            background: 'var(--bg-subtle, rgba(128,128,128,0.1))',
+            padding: '0.25rem 0.6rem',
+            borderRadius: '999px',
+            fontFamily: 'monospace',
+            fontSize: '0.75rem',
+          }}>
+            {walletLabel}: {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
+          </span>
+          <button
+            type="button"
+            onClick={handleDisconnect}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              textDecoration: 'underline',
+            }}
+          >
+            Switch
+          </button>
+        </div>
+      )}
 
       <div className="glass" style={{ padding: '1.5rem' }}>
         <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
@@ -194,7 +384,7 @@ export default function PayClient({
           disabled={!amountValid || stage === 'paying' || stage === 'verifying'}
           onClick={pay}
         >
-          {stage === 'paying' && '⏳ Confirm in MiniPay…'}
+          {stage === 'paying' && `⏳ Confirm in ${walletLabel}…`}
           {stage === 'verifying' && '🔎 Verifying on Celo…'}
           {(stage === 'ready' || stage === 'error') &&
             (amountValid ? `Pay $${amountNum.toFixed(2)}` : 'Enter amount')}

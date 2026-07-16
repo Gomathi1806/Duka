@@ -11,60 +11,68 @@ export async function GET(
 ) {
   const { slug } = await context.params;
 
-  const db = getDb();
-  const merchant = await db.query.merchants.findFirst({
-    where: eq(merchants.slug, slug.toLowerCase()),
-  });
-  if (!merchant) {
-    return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
-  }
-
-  const amount = req.nextUrl.searchParams.get("amount");
-  if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-    return NextResponse.json(
-      { error: "Query param 'amount' is required" },
-      { status: 400 }
-    );
-  }
-
-  const price = `$${parseFloat(amount).toFixed(2)}`;
-
-  const handler = async () => {
-    try {
-      await db
-        .insert(payments)
-        .values({
-          merchantId: merchant.id,
-          payerAddress: "x402-facilitator",
-          txHash: `x402-${Date.now()}-${slug}`,
-          amount: parseFloat(amount).toFixed(2),
-          token: merchant.token,
-        })
-        .onConflictDoNothing({ target: payments.txHash });
-    } catch (e) {
-      console.error("[x402-pay] failed to record payment:", e);
+  try {
+    const db = getDb();
+    const merchant = await db.query.merchants.findFirst({
+      where: eq(merchants.slug, slug.toLowerCase()),
+    });
+    if (!merchant) {
+      return NextResponse.json({ error: "Merchant not found" }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      merchant: merchant.name,
-      amount: price,
-    });
-  };
+    const amount = req.nextUrl.searchParams.get("amount");
+    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+      return NextResponse.json(
+        { error: "Query param 'amount' is required" },
+        { status: 400 }
+      );
+    }
 
-  const wrappedHandler = withX402(
-    handler,
-    {
-      accepts: {
-        scheme: "exact",
-        payTo: merchant.walletAddress as `0x${string}`,
-        price,
-        network: CELO_NETWORK,
+    const price = `$${parseFloat(amount).toFixed(2)}`;
+
+    const handler = async () => {
+      try {
+        await db
+          .insert(payments)
+          .values({
+            merchantId: merchant.id,
+            payerAddress: "x402-facilitator",
+            txHash: `x402-${Date.now()}-${slug}`,
+            amount: parseFloat(amount).toFixed(2),
+            token: merchant.token,
+          })
+          .onConflictDoNothing({ target: payments.txHash });
+      } catch (e) {
+        console.error("[x402-pay] failed to record payment:", e);
+      }
+
+      return NextResponse.json({
+        success: true,
+        merchant: merchant.name,
+        amount: price,
+      });
+    };
+
+    const wrappedHandler = withX402(
+      handler,
+      {
+        accepts: {
+          scheme: "exact",
+          payTo: merchant.walletAddress as `0x${string}`,
+          price,
+          network: CELO_NETWORK,
+        },
+        description: `Payment of ${price} to ${merchant.name}`,
       },
-      description: `Payment of ${price} to ${merchant.name}`,
-    },
-    x402Server
-  );
+      x402Server
+    );
 
-  return wrappedHandler(req);
+    return wrappedHandler(req);
+  } catch (e) {
+    console.error("[x402-pay] route error:", e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Internal error", stack: e instanceof Error ? e.stack : undefined },
+      { status: 500 }
+    );
+  }
 }

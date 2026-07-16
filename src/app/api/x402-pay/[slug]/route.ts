@@ -4,8 +4,12 @@ import { parseUnits } from "viem";
 import { getDb } from "@/db";
 import { merchants, payments } from "@/db/schema";
 import { TOKENS } from "@/lib/tokens";
-import type { TokenSymbol } from "@/lib/tokens";
-import { NETWORK } from "@/lib/minipay";
+import type { TokenSymbol, CeloNetwork } from "@/lib/tokens";
+
+// Derive network here — importing NETWORK from the browser-oriented
+// minipay module resolves to undefined in the server bundle.
+const NETWORK: CeloNetwork =
+  process.env.NEXT_PUBLIC_CELO_NETWORK === "celo" ? "celo" : "celo-alfajores";
 
 // EIP-712 domain per token, needed by wallets to sign transferWithAuthorization
 const EIP712_DOMAINS: Record<TokenSymbol, { name: string; version: string }> = {

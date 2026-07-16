@@ -50,7 +50,16 @@ export async function GET(
       ? (merchant.token as TokenSymbol)
       : "cUSD";
     const tokenDef = TOKENS[tokenSymbol];
-    const tokenAddress = tokenDef.address[NETWORK];
+    const tokenAddress = tokenDef?.address?.[NETWORK];
+    if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
+      return NextResponse.json(
+        {
+          error: "Token not available on this network",
+          debug: { merchantToken: merchant.token, tokenSymbol, network: NETWORK, tokenAddress },
+        },
+        { status: 500 }
+      );
+    }
     const baseUnits = parseUnits(parseFloat(amount).toFixed(2), tokenDef.decimals).toString();
 
     const handler = async () => {

@@ -7,6 +7,7 @@ import {
   type TokenSymbol, type WalletType, type ConnectedWallet,
 } from '@/lib/minipay';
 import { X402_VERSION, encodePaymentHeader, type PaymentRequiredResponse } from '@/lib/x402';
+import { payViaX402 } from '@/lib/x402-client';
 import { miniPayReceiptUrl, miniPayBrowseUrl } from '@/lib/deeplinks';
 
 type Stage =
@@ -102,6 +103,23 @@ export default function PayClient({
     const usd = amountNum.toFixed(2);
 
     try {
+      setStage('paying');
+
+      if (walletAddress) {
+        const x402Result = await payViaX402(slug, usd, token, walletAddress as `0x${string}`);
+        if (x402Result.success) {
+          if (x402Result.txHash) setTxHash(x402Result.txHash as `0x${string}`);
+          setStage('paid');
+          return;
+        }
+        if (x402Result.error === 'cancelled') {
+          setStage('ready');
+          setError('Payment cancelled.');
+          return;
+        }
+        console.warn('[pay] x402 facilitator failed, falling back to direct:', x402Result.error);
+      }
+
       const resourceUrl = `/api/x402/${slug}?amount=${usd}&token=${token}`;
       const challenge = await fetch(resourceUrl);
       if (challenge.status !== 402) {
@@ -111,7 +129,6 @@ export default function PayClient({
       const req = accepts?.[0];
       if (!req) throw new Error('No payment requirements returned.');
 
-      setStage('paying');
       const hash = await sendToken(req.payTo, req.extra.displayAmount, req.extra.symbol);
       setTxHash(hash);
 

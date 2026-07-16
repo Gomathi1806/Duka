@@ -14,6 +14,9 @@ import {
 
 // "||" not "??" — an env var saved as an empty string must still fall back
 const NETWORK = (process.env.NEXT_PUBLIC_CELO_NETWORK || "celo-alfajores") as CeloNetwork;
+const PLATFORM_FEE_BPS = parseInt(process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS || "50", 10);
+const HAS_FEE = /^0x[0-9a-fA-F]{40}$/.test(process.env.NEXT_PUBLIC_PLATFORM_FEE_WALLET || "")
+  && PLATFORM_FEE_BPS > 0;
 
 function parseAmount(raw: string | null): string | null {
   if (!raw) return null;
@@ -162,10 +165,15 @@ async function settle(
     return NextResponse.json({ error: `Unsupported token: ${token}` }, { status: 400 });
   }
 
+  const fullAmount = parseFloat(amountUsd);
+  const merchantAmount = HAS_FEE
+    ? fullAmount * (1 - PLATFORM_FEE_BPS / 10000)
+    : fullAmount;
+
   const verifyArgs = {
     txHash,
     recipientAddress: merchantWallet,
-    requiredUsd: parseFloat(amountUsd),
+    requiredUsd: merchantAmount,
     network: NETWORK,
     tokenAddress: tokenMeta.address[NETWORK],
     tokenDecimals: tokenMeta.decimals,
@@ -187,13 +195,17 @@ async function settle(
   // Record the sale — txHash is unique, so a replayed settlement is a no-op
   const db = getDb();
   try {
+    const feeAmount = HAS_FEE
+      ? (fullAmount * PLATFORM_FEE_BPS / 10000).toFixed(4)
+      : "0";
     await db
       .insert(payments)
       .values({
         merchantId,
         payerAddress: result.payer.toLowerCase(),
         txHash,
-        amount: parseFloat(amountUsd).toFixed(2),
+        amount: fullAmount.toFixed(2),
+        platformFee: feeAmount,
         token,
       })
       .onConflictDoNothing({ target: payments.txHash });

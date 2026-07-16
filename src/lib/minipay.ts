@@ -207,6 +207,9 @@ export async function connectWalletConnect(): Promise<ConnectedWallet> {
   return { address, type: "walletconnect" };
 }
 
+const PLATFORM_FEE_WALLET = (process.env.NEXT_PUBLIC_PLATFORM_FEE_WALLET || "") as `0x${string}`;
+const PLATFORM_FEE_BPS = parseInt(process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS || "50", 10);
+
 export async function sendToken(
   recipientAddress: `0x${string}`,
   amountUsd: string,
@@ -226,12 +229,48 @@ export async function sendToken(
 
   const { address: contractAddrs, decimals } = TOKENS[token];
   const tokenContract = contractAddrs[NETWORK];
-  const amountWei = parseUnits(amountUsd, decimals);
+  const totalWei = parseUnits(amountUsd, decimals);
+
+  const hasFeeWallet = /^0x[0-9a-fA-F]{40}$/.test(PLATFORM_FEE_WALLET);
+  const feeBps = PLATFORM_FEE_BPS > 0 && PLATFORM_FEE_BPS <= 1000 ? PLATFORM_FEE_BPS : 0;
+
+  if (hasFeeWallet && feeBps > 0) {
+    const feeWei = totalWei * BigInt(feeBps) / BigInt(10000);
+    const merchantWei = totalWei - feeWei;
+
+    const merchantCalldata = encodeFunctionData({
+      abi: ERC20_TRANSFER_ABI,
+      functionName: "transfer",
+      args: [recipientAddress, merchantWei],
+    });
+    const merchantData = concatHex([merchantCalldata, ATTRIBUTION_TAG]);
+
+    const merchantTxHash = (await provider.request({
+      method: "eth_sendTransaction",
+      params: [{ from: _address, to: tokenContract, data: merchantData }],
+    })) as `0x${string}`;
+
+    const feeCalldata = encodeFunctionData({
+      abi: ERC20_TRANSFER_ABI,
+      functionName: "transfer",
+      args: [PLATFORM_FEE_WALLET, feeWei],
+    });
+    const feeData = concatHex([feeCalldata, ATTRIBUTION_TAG]);
+
+    provider.request({
+      method: "eth_sendTransaction",
+      params: [{ from: _address, to: tokenContract, data: feeData }],
+    }).catch((err) => {
+      console.error("[platform-fee] fee transfer failed:", err);
+    });
+
+    return merchantTxHash;
+  }
 
   const calldata = encodeFunctionData({
     abi: ERC20_TRANSFER_ABI,
     functionName: "transfer",
-    args: [recipientAddress, amountWei],
+    args: [recipientAddress, totalWei],
   });
 
   const data = concatHex([calldata, ATTRIBUTION_TAG]);

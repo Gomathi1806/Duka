@@ -17,6 +17,7 @@ export const payments = pgTable('payments', {
   payerAddress: text('payer_address').notNull(),
   txHash: text('tx_hash').notNull().unique(),
   amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  platformFee: decimal('platform_fee', { precision: 10, scale: 4 }).default('0'),
   token: text('token').notNull().default('cUSD'),
   createdAt: timestamp('created_at').defaultNow(),
 });

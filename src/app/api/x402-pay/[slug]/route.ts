@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withX402 } from "@x402/next";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { merchants, payments } from "@/db/schema";
-import { x402Server, CELO_NETWORK } from "@/lib/x402-server";
 
 export async function GET(
   req: NextRequest,
@@ -12,6 +10,9 @@ export async function GET(
   const { slug } = await context.params;
 
   try {
+    const { withX402 } = await import("@x402/next");
+    const { x402Server, CELO_NETWORK } = await import("@/lib/x402-server");
+
     const db = getDb();
     const merchant = await db.query.merchants.findFirst({
       where: eq(merchants.slug, slug.toLowerCase()),

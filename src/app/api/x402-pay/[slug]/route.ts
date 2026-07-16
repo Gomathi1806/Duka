@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { parseUnits } from "viem";
 import { getDb } from "@/db";
 import { merchants, payments } from "@/db/schema";
+import { TOKENS } from "@/lib/tokens";
+import type { TokenSymbol } from "@/lib/tokens";
+import { NETWORK } from "@/lib/minipay";
+
+// EIP-712 domain per token, needed by wallets to sign transferWithAuthorization
+const EIP712_DOMAINS: Record<TokenSymbol, { name: string; version: string }> = {
+  cUSD: { name: "Celo Dollar", version: "1" },
+  USDC: { name: "USD Coin", version: "2" },
+  USDT: { name: "Tether USD", version: "1" },
+  cEUR: { name: "Celo Euro", version: "1" },
+  cREAL: { name: "Celo Brazilian Real", version: "1" },
+};
 
 export async function GET(
   req: NextRequest,
@@ -30,6 +43,15 @@ export async function GET(
     }
 
     const price = `$${parseFloat(amount).toFixed(2)}`;
+
+    // The x402 SDK has no default asset for Celo (eip155:42220), so we must
+    // pass the token address and base-unit amount explicitly.
+    const tokenSymbol = (merchant.token as TokenSymbol) in TOKENS
+      ? (merchant.token as TokenSymbol)
+      : "cUSD";
+    const tokenDef = TOKENS[tokenSymbol];
+    const tokenAddress = tokenDef.address[NETWORK];
+    const baseUnits = parseUnits(parseFloat(amount).toFixed(2), tokenDef.decimals).toString();
 
     const handler = async () => {
       try {
@@ -60,7 +82,16 @@ export async function GET(
         accepts: {
           scheme: "exact",
           payTo: merchant.walletAddress as `0x${string}`,
-          price,
+          price: {
+            asset: tokenAddress,
+            amount: baseUnits,
+            extra: {
+              ...EIP712_DOMAINS[tokenSymbol],
+              decimals: tokenDef.decimals,
+              symbol: tokenSymbol,
+              displayAmount: parseFloat(amount).toFixed(2),
+            },
+          },
           network: CELO_NETWORK,
         },
         description: `Payment of ${price} to ${merchant.name}`,

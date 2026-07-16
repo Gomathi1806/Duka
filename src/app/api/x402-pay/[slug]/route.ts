@@ -11,14 +11,16 @@ import type { TokenSymbol, CeloNetwork } from "@/lib/tokens";
 const NETWORK: CeloNetwork =
   process.env.NEXT_PUBLIC_CELO_NETWORK === "celo" ? "celo" : "celo-alfajores";
 
-// EIP-712 domain per token, needed by wallets to sign transferWithAuthorization
-const EIP712_DOMAINS: Record<TokenSymbol, { name: string; version: string }> = {
-  cUSD: { name: "Celo Dollar", version: "1" },
-  USDC: { name: "USD Coin", version: "2" },
-  USDT: { name: "Tether USD", version: "1" },
-  cEUR: { name: "Celo Euro", version: "1" },
-  cREAL: { name: "Celo Brazilian Real", version: "1" },
-};
+// The x402 "exact" scheme settles via EIP-3009 transferWithAuthorization.
+// On Celo, cUSD/cEUR/cREAL do NOT implement EIP-3009, so the facilitator
+// cannot settle them. Circle-native USDC does, so all facilitator-settled
+// x402 payments are denominated in USDC regardless of the merchant's
+// display token. (The direct-transfer path still uses the merchant token.)
+const X402_TOKEN: TokenSymbol = "USDC";
+
+// EIP-712 domain for the settlement token, verified on-chain against the
+// USDC contract's DOMAIN_SEPARATOR() on Celo mainnet.
+const X402_TOKEN_DOMAIN = { name: "USDC", version: "2" };
 
 export async function GET(
   req: NextRequest,
@@ -46,25 +48,22 @@ export async function GET(
       );
     }
 
-    const price = `$${parseFloat(amount).toFixed(2)}`;
+    const displayAmount = parseFloat(amount).toFixed(2);
+    const price = `$${displayAmount}`;
 
-    // The x402 SDK has no default asset for Celo (eip155:42220), so we must
-    // pass the token address and base-unit amount explicitly.
-    const tokenSymbol = (merchant.token as TokenSymbol) in TOKENS
-      ? (merchant.token as TokenSymbol)
-      : "cUSD";
-    const tokenDef = TOKENS[tokenSymbol];
+    // The x402 SDK has no default asset for Celo (eip155:42220), so we pass
+    // the USDC address and base-unit amount explicitly.
+    const tokenDef = TOKENS[X402_TOKEN];
     const tokenAddress = tokenDef?.address?.[NETWORK];
     if (!tokenAddress || tokenAddress === "0x0000000000000000000000000000000000000000") {
       return NextResponse.json(
         {
-          error: "Token not available on this network",
-          debug: { merchantToken: merchant.token, tokenSymbol, network: NETWORK, tokenAddress },
+          error: `${X402_TOKEN} is not available on ${NETWORK}; x402 facilitator settlement is unavailable`,
         },
-        { status: 500 }
+        { status: 503 }
       );
     }
-    const baseUnits = parseUnits(parseFloat(amount).toFixed(2), tokenDef.decimals).toString();
+    const baseUnits = parseUnits(displayAmount, tokenDef.decimals).toString();
 
     const handler = async () => {
       try {
@@ -74,8 +73,8 @@ export async function GET(
             merchantId: merchant.id,
             payerAddress: "x402-facilitator",
             txHash: `x402-${Date.now()}-${slug}`,
-            amount: parseFloat(amount).toFixed(2),
-            token: merchant.token,
+            amount: displayAmount,
+            token: X402_TOKEN,
           })
           .onConflictDoNothing({ target: payments.txHash });
       } catch (e) {
@@ -86,6 +85,7 @@ export async function GET(
         success: true,
         merchant: merchant.name,
         amount: price,
+        token: X402_TOKEN,
       });
     };
 
@@ -99,10 +99,10 @@ export async function GET(
             asset: tokenAddress,
             amount: baseUnits,
             extra: {
-              ...EIP712_DOMAINS[tokenSymbol],
+              ...X402_TOKEN_DOMAIN,
               decimals: tokenDef.decimals,
-              symbol: tokenSymbol,
-              displayAmount: parseFloat(amount).toFixed(2),
+              symbol: X402_TOKEN,
+              displayAmount,
             },
           },
           network: CELO_NETWORK,
@@ -116,10 +116,7 @@ export async function GET(
   } catch (e) {
     console.error("[x402-pay] route error:", e);
     return NextResponse.json(
-      {
-        error: e instanceof Error ? e.message : "Internal error",
-        stack: e instanceof Error ? e.stack?.split("\n").slice(0, 5) : undefined,
-      },
+      { error: e instanceof Error ? e.message : "Internal error" },
       { status: 500 }
     );
   }
